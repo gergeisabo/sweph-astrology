@@ -204,10 +204,10 @@ def _month_pillar(local_dt: datetime, year_stem: int) -> tuple:
     month_idx = _solar_month_index(local_dt)  # 0..11
     branch = MONTH_BRANCHES[month_idx]
 
-    # Five Tigers: starting stem for the Yin (Month 1) pillar, keyed by the
-    # year stem's element-pair index (year_stem // 2 gives 0..4).
-    tiger_starts = [2, 4, 6, 8, 0]  # Bing, Wu, Geng, Ren, Jia
-    m1_stem = tiger_starts[year_stem // 2]
+    # Five Tigers: starting stem for the Yin (Month 1) pillar.
+    # Pairs: [0,5]->2, [1,6]->4, [2,7]->6, [3,8]->8, [4,9]->0
+    # Formula: m1_stem = ((year_stem % 5) * 2 + 2) % 10
+    m1_stem = ((year_stem % 5) * 2 + 2) % 10
     stem = (m1_stem + month_idx) % 10
     return stem, branch
 
@@ -249,9 +249,8 @@ def _hour_pillar(hour: int, day_stem: int) -> tuple:
     """
     branch = _hour_branch_index(hour)
 
-    # Five Rats: starting stem for the Zi hour, keyed by day stem's element pair.
-    rat_starts = [0, 2, 4, 6, 8]  # Jia, Bing, Wu, Geng, Ren
-    zi_stem = rat_starts[day_stem // 2]
+    # Five Rats: starting stem for the Zi hour: zi_stem = (day_stem + 2) % 10
+    zi_stem = (day_stem + 2) % 10
     stem = (zi_stem + branch) % 10
     return stem, branch
 
