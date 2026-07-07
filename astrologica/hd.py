@@ -13,55 +13,48 @@ Key calculations:
 """
 from __future__ import annotations
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timezone
 
-from .core import BirthData, PlanetPosition, compute_positions
+import swisseph as swe
+
+from .core import BirthData, PlanetPosition, compute_positions, _EPHE_PATH
+
+# Ensure ephemeris path is set (shared with core).
+swe.set_ephe_path(_EPHE_PATH)
 
 # === 64 GATES ===
-# Gate numbers in zodiacal order starting from 0° Aries.
-# The order follows the King Wen sequence mapped to the zodiac:
-# Gate 41 starts at 0° Aquarius (300° tropical), but in HD the gate order
-# around the wheel is: 41, 19, 13, 49, 30, 55, 37, 63, 22, 36, 25, 17,
-# 21, 51, 40, 35, 47, 6, 48, 58, 38, 54, 53, 62, 56, 60, 52, 31, 33, 7,
-# 4, 29, 59, 40, 64, 47, 6, 46, 18, 48, 57, 32, 50, 28, 44, 1, 43, 14,
-# 34, 9, 5, 26, 11, 10, 20, 34, 37, 63, 55, 49, 30, 12, 45, 35
+# Canonical gate sequence around the Rave Mandala.
+# Verified against multiple independent HD calculators (MicFell/human_design_engine,
+# geodetheseeker/human-design-py) and cross-checked against the Medium Human Design
+# Academy article placing Gate 1 at Scorpio 13°15' (223.25°) and the
+# gethumandesign.com Rave Mandala documentation.
+#
+# Gate 41 starts at the Capricorn/Aquarius boundary (~302° tropical).
+# The sequence reads: 41 → 19 → 13 → 49 → 30 → 55 → 37 → 63 → 22 → 36
+#   → 25 → 17 → 21 → 51 → 42 → 3 → 27 → 24 → 2 → 23 → 8 → 20 → 16
+#   → 35 → 45 → 12 → 15 → 52 → 39 → 53 → 62 → 56 → 31 → 33 → 7 → 4
+#   → 29 → 59 → 40 → 64 → 47 → 6 → 46 → 18 → 48 → 57 → 32 → 50 → 28
+#   → 44 → 1 → 43 → 14 → 34 → 9 → 5 → 26 → 11 → 10 → 58 → 38 → 54
+#   → 61 → 60 → (wraps to 41).
 
-# Correct gate order (64 gates in zodiacal sequence starting from 0° Aries):
-GATE_ORDER = [
-    25, 36, 22, 37, 63, 55, 30, 49, 13, 19, 41, 60, 61, 54, 38, 58,
-    48, 57, 32, 50, 28, 44, 1,  43, 14, 34, 9,  5,  26, 11, 10, 20,
-    38, 54, 53, 62, 56, 60, 52, 31, 33, 7,  4,  29, 59, 40, 64, 47,
-    6,  46, 18, 48, 57, 32, 50, 28, 44, 1,  43, 14, 34, 9,  5,  26,
+GATE_SIZE = 360.0 / 64  # 5.625° per gate
+
+# The I'Ching-to-zodiac offset: adding 58° to a tropical longitude and
+# reading into IGING_WHEEL gives the correct gate.  Derived from:
+#   Gate 41 at index 0 covers 302°–307.625° (Aquarius 2°–7°37'30").
+#   Gate 1  at index 50 covers 223.25°–228.875° (Scorpio 13°15'–18°52'30").
+_IGING_OFFSET = 58.0  # degrees
+
+# 64 gates in order around the wheel, starting with Gate 41.
+IGING_WHEEL: list[int] = [
+    41, 19, 13, 49, 30, 55, 37, 63, 22, 36,
+    25, 17, 21, 51, 42,  3, 27, 24,  2, 23,
+     8, 20, 16, 35, 45, 12, 15, 52, 39, 53,
+    62, 56, 31, 33,  7,  4, 29, 59, 40, 64,
+    47,  6, 46, 18, 48, 57, 32, 50, 28, 44,
+     1, 43, 14, 34,  9,  5, 26, 11, 10, 58,
+    38, 54, 61, 60,
 ]
-# Wait, this is getting complex. Let me use the canonical HD gate map.
-# Each gate spans 5.625° (360/64). Starting from 58° Aquarius (Gate 41).
-
-# Canonical gate starting longitudes (tropical, in the standard HD wheel):
-# Gate 41 starts at 29°51'36" Aquarius = 329.86°
-# Actually, the standard is: Gate 1 starts at 58°00' Libra = 208°
-# Let's use the reverse: map each degree to a gate.
-
-GATE_SIZE = 360 / 64  # 5.625° per gate
-
-# Gate assignments in zodiacal order (starting from 0° Aries, going counterclockwise)
-# This is the standard Human Design bodygraph gate sequence:
-GATES_BY_DEGREE = [
-    25, 36, 22, 37, 63, 55, 30, 49,  # Aries
-    13, 19, 41, 60, 61, 54, 38, 58,  # Taurus
-    48, 57, 32, 50, 28, 44, 1,  43,  # Gemini
-    14, 34, 9,  5,  26, 11, 10, 21,  # Cancer
-    51, 42, 3,  62, 56, 60, 70, 64,  # Leo (70/72 not valid — using canonical)
-    47, 6,  46, 18, 17, 62, 16, 20,  # Virgo
-    31, 8,  7,  4,  29, 59, 40, 53,  # Libra
-    62, 56, 33, 31, 12, 45, 35, 16,  # Scorpio (some overlap)
-    52, 15, 39, 53, 62, 56, 20, 10,  # Sagittarius
-    58, 38, 54, 61, 60, 41, 19, 13,  # Capricorn
-    49, 30, 55, 37, 63, 22, 36, 25,  # Aquarius
-    17, 21, 51, 40, 35, 47, 6,  64,  # Pisces
-]
-
-# The gate numbering is notoriously inconsistent between HD software.
-# Let me use the simplest, most-cited version:
 
 # === CHANNELS (connecting pairs) ===
 # Each channel connects two gates between centers.
@@ -126,89 +119,20 @@ CHANNELS = {
 }
 
 
-def gate_at_longitude(longitude: float) -> tuple[int, float]:
+def gate_at_longitude(longitude: float) -> tuple[int, int]:
     """Return (gate_number, line_number) for a tropical longitude.
 
     Gate: 1-64. Line: 1-6 (each gate has 6 lines of ~0.94° each).
-    Uses the standard HD wheel: Gate 41 at Aquarius 58°.
+    Uses the verified Rave Mandala mapping (IGING_WHEEL with 58° offset).
     """
-    # Gate 41 starts at 298° (Aquarius 28°) — actually 298° is Aquarius 28°
-    # Standard: Gate 41 starts at 298.06°
-    gate_41_start = 298.06
-    offset = (longitude - gate_41_start) % 360
-    gate_idx = int(offset / GATE_SIZE)
-    line = int((offset % GATE_SIZE) / (GATE_SIZE / 6)) + 1
-
-    # Gate sequence starting from Gate 41:
-    seq = [
-        41, 19, 13, 49, 30, 55, 37, 63,
-        22, 36, 25, 17, 21, 51, 40, 35,
-        47, 6, 48, 58, 38, 54, 53, 62,
-        56, 60, 52, 31, 33, 7, 4, 29,
-        59, 64, 47, 6, 40, 64, 47, 6,
-        46, 18, 48, 57, 32, 50, 28, 44,
-        1, 43, 14, 34, 9, 5, 26, 11,
-        10, 20, 34, 57, 20, 10, 34, 57,
-    ]
-    # Actually this list has duplicates and is wrong. Let me use the canonical map.
-    # The correct sequence is:
-    correct_seq = [
-        41, 19, 13, 49, 30, 55, 37, 63,  # 1-8
-        22, 36, 25, 17, 21, 51, 40, 35,  # 9-16
-        47, 6, 48, 58, 38, 54, 53, 62,   # 17-24
-        56, 60, 52, 31, 33, 7, 4, 29,    # 25-32
-        59, 64, 6, 46, 18, 48, 57, 32,   # 33-40 (6 appears twice because of bodygraph overlap)
-        50, 28, 44, 1, 43, 14, 34, 9,    # 41-48
-        5, 26, 11, 10, 20, 34, 57, 20,   # 49-56
-        10, 34, 57, 20, 10, 34, 57, 20,  # 57-64 (incorrect — needs canonical)
-    ]
-
-    # I'm going to use the most widely accepted mapping from the Human Design school:
-    canonical = [
-        41, 19, 13, 49, 30, 55, 37, 63,
-        22, 36, 25, 17, 21, 51, 40, 35,
-        47, 6, 48, 58, 38, 54, 53, 62,
-        56, 60, 52, 31, 33, 7, 4, 29,
-        59, 64, 6, 46, 18, 48, 57, 32,
-        50, 28, 44, 1, 43, 14, 34, 9,
-        5, 26, 11, 10, 20, 34, 57, 20,
-        10, 34, 57, 20, 10, 34, 57, 20,
-    ]
-
-    # OK I need to be honest — the gate map is not trivial and I don't have
-    # a verified canonical source memorized. Let me use the mathematical approach:
-    # Each gate = 5.625°. Starting from Gate 1 at a known position.
-    # Gate 1 = 2° Leo 06'15" to 7° Leo 43'45" (tropical) = 122.1042° to 127.7292°
-    # Actually: Gate 1 starts at 122°06'15" tropical.
-
-    gate_1_start = 2 + 6/60 + 15/3600  # Leo 2°06'15"
-    gate_1_start = gate_1_start + 120  # = 122.1042° absolute
-
-    # No wait — I'm going in circles. Let me just define the 64 gates explicitly.
-    # This is the standard Human Design gate wheel in zodiacal order:
-    gate_wheel = [
-        (13, "Aries"), (49, "Aries"), (30, "Aries"), (55, "Aries"),
-        (37, "Aries"), (63, "Aries"), (22, "Aries"), (36, "Taurus"),
-        (25, "Taurus"), (17, "Taurus"), (21, "Taurus"), (51, "Taurus"),
-        (40, "Taurus"), (35, "Taurus"), (47, "Gemini"), (6, "Gemini"),
-        (48, "Gemini"), (58, "Gemini"), (38, "Gemini"), (54, "Gemini"),
-        (53, "Gemini"), (62, "Gemini"), (56, "Cancer"), (60, "Cancer"),
-        (52, "Cancer"), (31, "Cancer"), (33, "Cancer"), (7, "Cancer"),
-        (4, "Cancer"), (29, "Leo"), (59, "Leo"), (64, "Leo"),
-        (6, "Leo"), (46, "Leo"), (18, "Leo"), (48, "Leo"),
-        (57, "Leo"), (32, "Virgo"), (50, "Virgo"), (28, "Virgo"),
-        (44, "Virgo"), (1, "Virgo"), (43, "Virgo"), (14, "Virgo"),
-        (34, "Libra"), (9, "Libra"), (5, "Libra"), (26, "Libra"),
-        (11, "Libra"), (10, "Scorpio"), (20, "Scorpio"), (34, "Scorpio"),
-        (57, "Scorpio"), (20, "Scorpio"), (10, "Scorpio"), (34, "Scorpio"),
-        (57, "Sagittarius"), (20, "Sagittarius"), (10, "Sagittarius"), (34, "Sagittarius"),
-        (57, "Sagittarius"), (20, "Sagittarius"), (41, "Capricorn"), (19, "Capricorn"),
-    ]
-
-    # This approach isn't working from memory. The gate assignments need a verified source.
-    # For now, compute the gate index mathematically and return a placeholder.
-    gate_idx = int(offset / GATE_SIZE) % 64
-    return (gate_idx + 1, line)
+    angle = (longitude + _IGING_OFFSET) % 360.0
+    gate_idx = int(angle / 360.0 * 64)  # 0-63
+    # Guard against 360.0 rounding into index 64.
+    if gate_idx >= 64:
+        gate_idx = 63
+    gate_number = IGING_WHEEL[gate_idx]
+    line = int((angle / GATE_SIZE * 6) % 6) + 1  # 1-6
+    return (gate_number, line)
 
 
 # === TYPES ===
@@ -252,12 +176,33 @@ class HumanDesignChart:
 
 
 def _get_design_date(birth: BirthData) -> BirthData:
-    """Compute the Design date (88° of solar arc before birth ≈ 88-89 days)."""
-    utc = birth.to_utc()
-    design_utc = utc - timedelta(days=88)
+    """Compute the Design date by finding when the Sun was exactly 88°
+    before its natal longitude (the 88° solar arc method).
+
+    Uses Swiss Ephemeris swe.solcross_ut for precision.
+    """
+    jd_birth = birth.julian_day()
+    sun_at_birth = swe.calc_ut(jd_birth, swe.SUN)[0][0]
+    target_lon = swe.degnorm(sun_at_birth - 88.0)
+    # Start searching ~88-100 days before birth.
+    jd_start = jd_birth - 100
+    jd_design = swe.solcross_ut(target_lon, jd_start)
+    # Convert back to a BirthData in UTC.
+    rev = swe.revjul(jd_design)
+    # Extract fractional day as H:M:S
+    frac = rev[3]  # decimal hours
+    h = int(frac)
+    m = int((frac - h) * 60)
+    s = int(((frac - h) * 60 - m) * 60 + 0.5)
+    if s >= 60:
+        s -= 60
+        m += 1
+    if m >= 60:
+        m -= 60
+        h += 1
     return BirthData(
-        date=f"{design_utc.year:04d}-{design_utc.month:02d}-{design_utc.day:02d}",
-        time=f"{design_utc.hour:02d}:{design_utc.minute:02d}:{design_utc.second:02d}",
+        date=f"{int(rev[0]):04d}-{int(rev[1]):02d}-{int(rev[2]):02d}",
+        time=f"{h:02d}:{m:02d}:{s:02d}",
         lat=birth.lat,
         lon=birth.lon,
         tz="UTC",
