@@ -1,0 +1,21 @@
+# Environment
+.venv/
+*.pyc
+__pycache__/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+
+# Ephemeris data (binary, download separately)
+ephe/*.se1
+
+# Config with secrets
+config.yaml
+
+# Output
+output/
+
+# OS
+.DS_Store

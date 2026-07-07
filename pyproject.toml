@@ -1,0 +1,23 @@
+[project]
+name = "astrologica-core"
+version = "0.1.0"
+description = "Local astrology computation engine — Western, Vedic, BaZi, Human Design, Destiny Matrix, Mayan, Hellenistic, Divination. Full replacement for cloud astrology APIs."
+requires-python = ">=3.11"
+dependencies = [
+    "pyswisseph>=2.10.3.2",
+]
+
+[project.optional-dependencies]
+render = ["reportlab", "lxml"]
+dev = ["pytest", "ruff"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["astrologica*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

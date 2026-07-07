@@ -1,0 +1,20 @@
+# Astrologica configuration
+# Copy this to config.yaml and customize. All values are optional —
+# the engine runs fully local by default.
+
+# Ephemeris
+ephe_path: "/Users/gergeisabo/Projects/astrologica/ephe"
+default_ayanamsa: "lahiri"          # lahiri | raman | krishnamurti | fagan_bradley | yukteshwar
+default_house_system: "whole_sign"  # whole_sign (vedic) | placidus | koch | equal | campanus | regiomontanus | porphyry
+
+# AstroWay backup (leave empty for local-only)
+api_base_url: ""     # https://api.astroway.info/v1
+api_key: ""          # aw_test_... or aw_live_...
+api_user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+# LLM backend for interpretations
+llm_provider: ""     # minimax | deepseek | glm | openrouter
+llm_api_key: ""
+
+# Output
+output_dir: "/Users/gergeisabo/Projects/astrologica/output"
