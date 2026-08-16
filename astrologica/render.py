@@ -212,3 +212,95 @@ def save_svg(svg_content: str, filepath: str) -> None:
     """Save SVG to file."""
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(svg_content)
+
+
+def transit_calendar_markdown(entries: list[dict], year: int, month: int) -> str:
+    """Render transit calendar entries as a Markdown table.
+
+    Args:
+        entries: output from timing.transit_calendar()
+        year, month: for the header
+    """
+    lines = [f"# Transit Calendar — {year}-{month:02d}", ""]
+
+    for entry in entries:
+        date = entry["date"]
+        aspects = entry["aspects"]
+        if not aspects:
+            continue
+
+        lines.append(f"## {date}")
+        lines.append("")
+        lines.append("| Transit | Natal | Aspect | Orb | Applying? |")
+        lines.append("|---------|-------|--------|-----|-----------|")
+
+        for a in aspects:
+            applying = "✅" if a["applying"] else "—"
+            lines.append(f"| {a['transit']} | {a['natal']} | {a['aspect']} | {a['orb']:.1f}° | {applying} |")
+
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def muhurat_markdown(results: list[dict], activity: str) -> str:
+    """Render muhurat scan results as a Markdown table.
+
+    Args:
+        results: output from vedic_ext.muhurat_scan()
+        activity: activity type for the header
+    """
+    lines = [f"# Muhurat Scan — {activity.title()}", ""]
+    lines.append("| Rank | Date | Day | Score | Notes |")
+    lines.append("|------|------|-----|-------|-------|")
+
+    for i, r in enumerate(results[:20], 1):  # top 20
+        notes = "; ".join(r["notes"][:2])
+        lines.append(f"| {i} | {r['date']} | {r['day']} | **{r['score']}** | {notes} |")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def aspect_grid_svg(positions: dict, width: int = 400, height: int = 400) -> str:
+    """Generate a simple aspect grid SVG showing planet-to-planet aspects."""
+    from astrologica.western import aspects
+    asp = aspects(positions, orb=8.0)
+
+    planet_names = sorted(set(p for a in asp for p in [a.get("planet1", ""), a.get("planet2", "")]))
+    n = len(planet_names)
+    cell = min(width, height) // (n + 1)
+
+    svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">\n'
+    svg += f'<rect width="{width}" height="{height}" fill="#1a1a2e"/>\n'
+
+    # Headers
+    for i, name in enumerate(planet_names):
+        short = name[:3]
+        x = (i + 1) * cell + cell // 2
+        svg += f'<text x="{x}" y="{cell - 5}" fill="#e0e0e0" font-size="10" text-anchor="middle">{short}</text>\n'
+        svg += f'<text x="{cell // 2}" y="{(i + 1) * cell + cell // 2 + 4}" fill="#e0e0e0" font-size="10" text-anchor="middle">{short}</text>\n'
+
+    # Grid cells
+    aspect_colors = {
+        "conjunction": "#ff6b6b", "opposition": "#ff6b6b",
+        "trine": "#51cf66", "sextile": "#51cf66",
+        "square": "#ffd43b",
+    }
+
+    for a in asp:
+        p1 = a.get("planet1", "")
+        p2 = a.get("planet2", "")
+        if p1 in planet_names and p2 in planet_names:
+            i = planet_names.index(p1)
+            j = planet_names.index(p2)
+            x = (j + 1) * cell
+            y = (i + 1) * cell
+            color = aspect_colors.get(a.get("type", ""), "#888")
+            symbol = {"conjunction": "☌", "opposition": "☍", "trine": "△", "sextile": "⚹", "square": "□"}.get(a.get("type", ""), "•")
+            svg += f'<rect x="{x}" y="{y}" width="{cell}" height="{cell}" fill="{color}" opacity="0.3"/>\n'
+            svg += f'<text x="{x + cell//2}" y="{y + cell//2 + 4}" fill="{color}" font-size="14" text-anchor="middle">{symbol}</text>\n'
+
+    svg += "</svg>"
+    return svg
+
