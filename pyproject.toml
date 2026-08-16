@@ -1,5 +1,5 @@
 [project]
-name = "astrologica-core"
+name = "sweph-astrology"
 version = "0.1.0"
 description = "Local astrology computation engine — Western, Vedic, BaZi, Human Design, Destiny Matrix, Mayan, Hellenistic, Divination. Full replacement for cloud astrology APIs."
 requires-python = ">=3.11"
