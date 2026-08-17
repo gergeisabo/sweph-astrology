@@ -17,16 +17,28 @@ from astrologica.hd import compute as compute_hd, gate_at_longitude
 
 # ── HD transits ──────────────────────────────────────────────────────────────
 
-def hd_transits(birth: BirthData) -> dict:
-    """Current HD transits: which gates are activated by current planetary positions."""
-    pos = compute_positions(birth)
-    active_gates: dict[str, int] = {}
+def hd_transits(birth: BirthData, transit_date=None) -> dict:
+    """Current HD transits: which gates are activated by planetary positions.
+
+    Parameters
+    ----------
+    birth        — natal birth data
+    transit_date — datetime for transit positions (default: now)
+    """
+    if transit_date is None:
+        import datetime
+        transit_date = datetime.datetime.now(datetime.timezone.utc)
+    transit_birth = BirthData(
+        date=transit_date.strftime("%Y-%m-%d"),
+        time=transit_date.strftime("%H:%M:%S"),
+        lat=birth.lat, lon=birth.lon, tz="UTC", place="Transit",
+    )
+    pos = compute_positions(transit_birth)
+    active_gates: dict[str, tuple[int, int]] = {}
     for name, p in pos.items():
-        if name in ("Rahu", "Ketu", "Lilith"):
-            continue
-        gate = gate_at_longitude(p.longitude)
-        active_gates[name] = gate
-    return {"active_gates": active_gates}
+        gate, line = gate_at_longitude(p.longitude)
+        active_gates[name] = (gate, line)
+    return {"active_gates": active_gates, "transit_date": str(transit_date)}
 
 
 # ── HD compatibility ────────────────────────────────────────────────────────
@@ -54,16 +66,19 @@ def hd_compatibility(birth1: BirthData, birth2: BirthData) -> dict:
 # ── incarnation cross ───────────────────────────────────────────────────────
 
 def incarnation_cross(birth: BirthData) -> dict:
-    """Incarnation cross: the 4 gates formed by Sun/Earth and nodes.
+    """Incarnation cross: the 4 gates formed by Sun/Earth.
 
-    The existing HD engine already computes this — we just expose it.
+    Uses the corrected Earth gate calculation (wheel index +32, not gate number +32).
     """
     bg = compute_hd(birth)
-    # Earth = Sun + 32 in HD gate wheel (opposite position)
+    from astrologica.hd import IGING_WHEEL
+    # Earth = opposite position on wheel (index +32)
     p_sun = bg.personality_gates.get("Sun", 0)
-    p_earth = bg.personality_gates.get("Earth", (p_sun + 32) % 64 or 64)
+    p_sun_idx = IGING_WHEEL.index(p_sun)
+    p_earth = IGING_WHEEL[(p_sun_idx + 32) % 64]
     d_sun = bg.design_gates.get("Sun", 0)
-    d_earth = bg.design_gates.get("Earth", (d_sun + 32) % 64 or 64)
+    d_sun_idx = IGING_WHEEL.index(d_sun)
+    d_earth = IGING_WHEEL[(d_sun_idx + 32) % 64]
 
     return {
         "incarnation_cross": bg.incarnation_cross,

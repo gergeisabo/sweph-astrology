@@ -172,6 +172,15 @@ class HumanDesignChart:
     authority: str
     profile: tuple[int, int]
     incarnation_cross: str
+    # Rave Variables (sub-structure)
+    determination_color: int       # Design Sun Color (1-6)
+    determination_tone: int        # Design Sun Tone (1-6)
+    environment_color: int         # Design Nodes Color (1-6)
+    environment_tone: int          # Design Nodes Tone (1-6)
+    motivation_color: int          # Personality Sun Color (1-6)
+    perspective_color: int         # Personality Nodes Color (1-6)
+    sense_tone: int                # Personality Sun Tone (1-6)
+    cognition_tone: int            # Design Sun Tone (1-6)
 
 
 def _get_design_date(birth: BirthData) -> BirthData:
@@ -231,18 +240,56 @@ def compute(birth: BirthData) -> HumanDesignChart:
         if g1 in all_gates and g2 in all_gates:
             defined_channels.append(ch_name)
 
-    # Defined centers
+    # Defined centers: a center is defined only if it participates in at least
+    # one complete channel (both gates active).
     defined_centers = set()
-    for center, gates in CENTERS.items():
-        if any(g in all_gates for g in gates):
-            defined_centers.add(center)
+    for ch_name in defined_channels:
+        g1, g2 = CHANNELS[ch_name]
+        for center, gates in CENTERS.items():
+            if g1 in gates or g2 in gates:
+                defined_centers.add(center)
 
-    # Type determination
+    # Motor-to-Throat connectivity: build graph of centers connected via
+    # defined channels and check if any motor center (Heart/Root/Solar Plexus)
+    # can reach Throat through the defined channel network.
+    MOTOR_CENTERS = {"Heart", "Root", "Solar Plexus"}
+
+    # Build adjacency: which centers connect to which via defined channels
+    center_adj: dict[str, set[str]] = {c: set() for c in CENTERS}
+    for ch_name in defined_channels:
+        g1, g2 = CHANNELS[ch_name]
+        c1 = c2 = None
+        for center, gates in CENTERS.items():
+            if g1 in gates:
+                c1 = center
+            if g2 in gates:
+                c2 = center
+        if c1 and c2 and c1 != c2:
+            center_adj[c1].add(c2)
+            center_adj[c2].add(c1)
+
+    # BFS from each motor center to see if Throat is reachable
+    motor_to_throat = False
+    if "Throat" in defined_centers:
+        for motor in MOTOR_CENTERS:
+            if motor in defined_centers:
+                visited = {motor}
+                queue = [motor]
+                found = False
+                while queue:
+                    current = queue.pop(0)
+                    if current == "Throat":
+                        found = True
+                        break
+                    for neighbor in center_adj[current]:
+                        if neighbor not in visited:
+                            visited.add(neighbor)
+                            queue.append(neighbor)
+                if found:
+                    motor_to_throat = True
+                    break
+
     sacral_defined = "Sacral" in defined_centers
-    throat_defined = "Throat" in defined_centers
-    motor_to_throat = False  # simplified
-    if "Heart" in defined_centers or "Root" in defined_centers or "Solar Plexus" in defined_centers:
-        motor_to_throat = throat_defined  # simplified check
 
     if not defined_centers:
         hd_type = "Reflector"
@@ -279,12 +326,67 @@ def compute(birth: BirthData) -> HumanDesignChart:
     d_sun_gate, d_sun_line = gate_at_longitude(design["Sun"].longitude)
     profile = (p_sun_line, d_sun_line)
 
-    # Incarnation Cross (simplified)
+    # Incarnation Cross: Earth is 180° opposite Sun on the zodiac wheel.
+    # Must use wheel INDEX (not gate number) to find the opposite position.
     p_sun_g = personality_gates["Sun"]
-    p_earth_g = (p_sun_g + 32) % 64 or 64  # opposite gate
+    p_sun_idx = IGING_WHEEL.index(p_sun_g)
+    p_earth_g = IGING_WHEEL[(p_sun_idx + 32) % 64]
     d_sun_g = design_gates["Sun"]
-    d_earth_g = (d_sun_g + 32) % 64 or 64
+    d_sun_idx = IGING_WHEEL.index(d_sun_g)
+    d_earth_g = IGING_WHEEL[(d_sun_idx + 32) % 64]
     incarnation_cross = f"{p_sun_g}/{p_earth_g}/{d_sun_g}/{d_earth_g}"
+
+    # === Rave Variables (sub-structure) ===
+    # Color (1-6) and Tone (1-6) from position within gate/line.
+    # Gate = 5.625°, Line = 0.9375°, Color = 0.15625°, Tone = 0.02604°
+    # Variable sources:
+    #   Determination = Design Sun (Color + Tone for variant)
+    #   Environment   = Design Nodes (Color + Tone for variant)
+    #   Sense         = Personality Sun Tone
+    #   Cognition     = Design Sun Tone
+    #   Motivation    = Personality Sun Color
+    #   Perspective   = Personality Nodes Color
+    # Use TRUE NODE (not Mean) for Environment and Perspective.
+
+    _GATE_SIZE = 360.0 / 64
+    _LINE_SIZE = _GATE_SIZE / 6
+    _COLOR_SIZE = _LINE_SIZE / 6
+    _TONE_SIZE = _COLOR_SIZE / 6
+    _OFFSET = 58.0
+
+    def _get_color_tone(lon: float) -> tuple[int, int]:
+        """Return (color, tone) for a tropical longitude."""
+        angle = (lon + _OFFSET) % 360.0
+        pos_in_gate = angle % _GATE_SIZE
+        line_idx = int(pos_in_gate / _LINE_SIZE)
+        pos_after_line = pos_in_gate - line_idx * _LINE_SIZE
+        color_idx = int(pos_after_line / _COLOR_SIZE)
+        pos_after_color = pos_after_line - color_idx * _COLOR_SIZE
+        tone_idx = int(pos_after_color / _TONE_SIZE)
+        return color_idx + 1, tone_idx + 1
+
+    import swisseph as _swe
+    _jd = birth.julian_day()
+    _jd_design = design_birth.julian_day()
+
+    # Design Sun
+    _d_sun_lon = _swe.calc_ut(_jd_design, _swe.SUN)[0][0]
+    det_color, det_tone = _get_color_tone(_d_sun_lon)
+
+    # Design Nodes (True Node)
+    _d_node_lon = _swe.calc_ut(_jd_design, _swe.TRUE_NODE)[0][0]
+    env_color, env_tone = _get_color_tone(_d_node_lon)
+
+    # Personality Sun
+    _p_sun_lon = personality["Sun"].longitude
+    mot_color, sense_tone = _get_color_tone(_p_sun_lon)
+
+    # Personality Nodes (True Node)
+    _p_node_lon = _swe.calc_ut(_jd, _swe.TRUE_NODE)[0][0]
+    per_color, _ = _get_color_tone(_p_node_lon)
+
+    # Cognition = Design Sun Tone (same as det_tone)
+    cog_tone = det_tone
 
     return HumanDesignChart(
         personality=personality,
@@ -299,4 +401,12 @@ def compute(birth: BirthData) -> HumanDesignChart:
         authority=authority,
         profile=profile,
         incarnation_cross=incarnation_cross,
+        determination_color=det_color,
+        determination_tone=det_tone,
+        environment_color=env_color,
+        environment_tone=env_tone,
+        motivation_color=mot_color,
+        perspective_color=per_color,
+        sense_tone=sense_tone,
+        cognition_tone=cog_tone,
     )

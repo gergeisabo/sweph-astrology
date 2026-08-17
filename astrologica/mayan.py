@@ -71,7 +71,7 @@ def tzolkin(date_str: str) -> dict:
     days = jdn - JDN_OFFSET
 
     # Tzolkin: number 1-13, name 1-20
-    tzolkin_num = (days + 3) % 13
+    tzolkin_num = (days + 4) % 13
     if tzolkin_num == 0:
         tzolkin_num = 13
     tzolkin_day_idx = (days + 19) % 20
@@ -90,7 +90,7 @@ def haab(date_str: str) -> dict:
     jdn = _to_jdn(d)
     days = jdn - JDN_OFFSET
 
-    haab_day = (days + 8 + 17 * 20) % 365
+    haab_day = (days + 68) % 365
     haab_month_idx = haab_day // 20
     haab_day_in_month = haab_day % 20
 

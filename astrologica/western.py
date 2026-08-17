@@ -162,14 +162,21 @@ def _jd_to_birthdata(jd: float, lat: float, lon: float) -> BirthData:
 
 
 def _parse_date_to_utc(value: str | datetime, tz: str = "UTC") -> datetime:
-    """Accept 'YYYY-MM-DD' or a datetime; return a UTC datetime."""
+    """Accept 'YYYY-MM-DD', 'YYYY-MM-DD HH:MM:SS', or a datetime; return UTC."""
     if isinstance(value, datetime):
         dt = value
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.astimezone(timezone.utc)
-    parts = [int(x) for x in value.split("-")]
-    return datetime(parts[0], parts[1], parts[2], tzinfo=timezone.utc)
+    # Handle 'YYYY-MM-DD HH:MM:SS' or 'YYYY-MM-DD'
+    parts = value.strip().replace("T", " ").split(" ")
+    date_parts = [int(x) for x in parts[0].split("-")]
+    if len(parts) > 1 and ":" in parts[1]:
+        time_parts = [int(x) for x in parts[1].split(":")]
+        return datetime(date_parts[0], date_parts[1], date_parts[2],
+                        time_parts[0], time_parts[1], time_parts[2] if len(time_parts) > 2 else 0,
+                        tzinfo=timezone.utc)
+    return datetime(date_parts[0], date_parts[1], date_parts[2], tzinfo=timezone.utc)
 
 
 # ---------------------------------------------------------------------------
